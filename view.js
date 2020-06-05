@@ -1154,6 +1154,7 @@ view.ModelFactoryService = class {
         this.register('./flux', [ '.bson' ]);
         this.register('./chainer', [ '.npz', '.h5', '.hd5', '.hdf5' ]);
         this.register('./dl4j', [ '.zip' ]);
+        this.register('./vitis',['.xmodel']);
         this.register('./mlnet', [ '.zip' ]);
     }
 
