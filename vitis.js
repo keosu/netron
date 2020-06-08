@@ -7,21 +7,21 @@ var base = base || require('./base');
 vitis.ModelFactory = class {
 
     match(context) {
-        if(context.buffer.length > 0)
+        if (context.buffer.length > 0)
             return true;
         return false;
     }
 
     open(context, host) {
         try {
-            let xmodel = require('./vitis-proto');
-            let G = xmodel.serial_v2.Graph.decode(context.buffer);
-
-            return Promise.resolve(new vitis.Model(G));
+            return host.require('./vitis-proto').then(() => {
+                let G = protobuf.roots.vitis.serial_v2.Graph.decode(context.buffer);
+                return Promise.resolve(new vitis.Model(G));
+            });
         }
         catch (error) {
             host.exception(error, false);
-            throw new vitis.Error("Error loading xmodel: "+error);
+            throw new vitis.Error("Error loading xmodel: " + error);
         }
     }
 
@@ -35,7 +35,7 @@ vitis.Model = class {
     }
 
     get format() {
-        return 'xmodel';
+        return 'Vitis-AI xmodel';
     }
 
     get source() {
@@ -54,58 +54,18 @@ vitis.Graph = class {
         this._inputs = [];
         this._outputs = [];
 
-
         let nodes = graphDesc.opNode;
-        nodes.forEach(node => {
-            // if(node.opType != "const-fix" && node.opType != "data-fix"  && node.opType != "const")
-            this._nodes.push(new vitis.Node(node));
+
+        vitis.nodeMap = vitis.nodeMap || new Map();
+        vitis.nodes = graphDesc.opNode;
+        nodes.forEach((node,idx) => {
+            vitis.nodeMap.set(node.opName,idx);
         });
-
-        // let args = [];
-        // args.push(new vitis.Argument('input', 'float32', null));
-        // this._inputs.push(new vitis.Parameter('inop', true, args));
-
-        // for (let i = 0; i < 4; i++) {
-        //     this._nodes.push(new vitis.Node([], 'conv' + i, ''));
-        // }
-
-        // this._outputs.push(new vitis.Parameter('outop', true, args));
-
-        // let inputSet = new Set();
-        // for (let i = 0; i < net.oplistsLength(); i++) {
-        //     const op = net.oplists(i);
-        //     if (vitis.schema.OpTypeName[op.type()] === 'Input') {
-        //         let args = [];
-        //         for (let j = 0; j < op.outputIndexesLength(); j++) {
-        //             const index = op.outputIndexes(j);
-        //             const name = net.tensorName(index);
-        //             const extraTensorDescribe = net.extraTensorDescribe(index);
-        //             const blob = extraTensorDescribe ? extraTensorDescribe.blob() : null;
-        //             const type = blob ? vitis.Graph._blobTensorType(blob) : null;
-        //             args.push(new vitis.Argument(name, type, null));
-        //         }
-        //         this._inputs.push(new vitis.Parameter(op.name(), true, args));
-        //     }
-        //     else {
-        //         this._nodes.push(new vitis.Node(metadata, op, net));
-        //     }
-        //     for (let k = 0; k < op.inputIndexesLength(); k++) {
-        //         const index = op.inputIndexes(k);
-        //         inputSet.add(index);
-        //     }
-        // }
-
-        // for (let i = 0; i < net.tensorNameLength(); i++) {
-        //     if (!inputSet.has(i)) {
-        //         const name = net.tensorName(i);
-        //         const extraTensorDescribe = net.extraTensorDescribe(i);
-        //         const blob = extraTensorDescribe ? extraTensorDescribe.blob() : null;
-        //         const type = blob ? vitis.Graph._blobTensorType(blob) : null;
-        //         this._outputs.push(new vitis.Parameter(name, true, [
-        //             new vitis.Argument(name, type, null)
-        //         ]));
-        //     }
-        // }
+        nodes.forEach(node => {
+            if (node.opType != "const-fix" && node.opType != "const"
+                    && (node.opName.search("weights") < 0 && node.opName.search("bias") < 0 ))
+                this._nodes.push(new vitis.Node(node));
+        });
     }
 
     get name() {
@@ -141,16 +101,31 @@ vitis.Node = class {
         this._outputs = [];
         this._chains = [];
 
+
+
         nodeDesc.args.forEach((arg) => {
-            this._inputs.push(new vitis.Parameter(arg.argName, true, {'name':arg.argOps[0]}));
+
+            let para = null;
+            if (arg.argName === "weights" || arg.argName === "bias") {
+                let protoNode = vitis.nodes[vitis.nodeMap.get(arg.argOps[0])];
+                let protoTensor = protoNode.outputTensor;
+                let tensorType = new vitis.TensorType("float32" ,new vitis.TensorShape(protoTensor.tensorDim));
+                let data = null;
+                if(protoNode.opAttr['data'])
+                    data = protoNode.opAttr['data'].bytesValue.value;
+                let tensor = new vitis.Tensor(protoNode.opName,tensorType, data);
+                para = new vitis.Parameter(arg.argName, true, new vitis.Argument(arg.argOps[0], null, tensor));
+            }
+            else
+                para = new vitis.Parameter(arg.argName, true, new vitis.Argument(arg.argOps[0]));
+            this._inputs.push(para);
         });
 
         for (const attr of Object.entries(nodeDesc.opAttr)) {
-            this._attributes.push(new vitis.Attribute(null,attr[0],Object.values(attr[1])[0],true));
+            this._attributes.push(new vitis.Attribute(null, attr[0], Object.values(attr[1])[0], true));
         }
 
-        // let ot = nodeDesc.outputTensor;
-        this._outputs.push(new vitis.Parameter("output", true, {'name':nodeDesc.opName}));
+        this._outputs.push(new vitis.Parameter("output", true, new vitis.Argument(nodeDesc.opName,"")));
 
     }
 
@@ -289,15 +264,18 @@ vitis.Tensor = class {
     }
 
     get state() {
-        return this._context().state;
+        return null;
     }
 
     get value() {
-        return 'tensor value';
+        return this._data;
     }
 
     toString() {
-        return '[tensor string]';
+        if(this._data)
+            return this._data.toJSON().data;
+        else
+            return null;
     }
 
 };
@@ -318,7 +296,7 @@ vitis.TensorType = class {
     }
 
     toString() {
-        return this._dataType + this._shape.toString();
+        return this._dataType + "<" + this._shape.toString() + ">";
     }
 };
 
@@ -329,11 +307,11 @@ vitis.TensorShape = class {
     }
 
     get dimensions() {
-        return [1, 2, 3, 4];
+        return this._dimensions;
     }
 
     toString() {
-        return '[1,2,3,4]';
+        return this._dimensions.toString();
     }
 };
 
@@ -354,7 +332,7 @@ vitis.Metadata = class {
     }
 
     attribute(type, name) {
-        return "attri_haha"
+        return "attri_haha";
     }
 };
 

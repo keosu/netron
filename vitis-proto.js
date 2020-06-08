@@ -1,22 +1,16 @@
 /*eslint-disable block-scoped-var, id-length, no-control-regex, no-magic-numbers, no-prototype-builtins, no-redeclare, no-shadow, no-var, sort-vars*/
-(function(global, factory) { /* global define, require, module */
-
-    /* AMD */ if (typeof define === 'function' && define.amd)
-        define(["protobufjs/minimal"], factory);
-
-    /* CommonJS */ else if (typeof require === 'function' && typeof module === 'object' && module && module.exports)
-        module.exports = factory(require("protobufjs/minimal"));
-
-})(this, function($protobuf) {
+(function($protobuf) {
     "use strict";
 
     // Common aliases
     var $Reader = $protobuf.Reader, $Writer = $protobuf.Writer, $util = $protobuf.util;
     
     // Exported root namespace
-    var $root = $protobuf.roots["default"] || ($protobuf.roots["default"] = {});
+    // var $root = $protobuf.roots["default"] || ($protobuf.roots["default"] = {});
+    var $root = $protobuf.roots.vitis || ($protobuf.roots.vitis = {});
     
     $root.serial_v2 = (function() {
+        
     
         /**
          * Namespace serial_v2.
@@ -8297,4 +8291,4 @@
     })();
 
     return $root;
-});
+})(protobuf);
